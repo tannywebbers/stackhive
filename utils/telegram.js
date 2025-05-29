@@ -5,42 +5,61 @@ const { getOrCreateUser, updateUserBalance, addTransaction, savePaystackRecipien
 const { generateUniqueRef } = require('./helpers');
 const { MAIN_MENU_KEYBOARD, BOT_MESSAGES, MIN_DEPOSIT_AMOUNT, MIN_WITHDRAW_AMOUNT, EMAIL_REGEX, BEP20_USDT_REGEX, INVESTMENT_PLANS } = require('../config/constants');
 
-// Initialize bot - no polling here, as it will be used with webhooks on Vercel
+// Initialize bot instance for webhook mode (no polling: true)
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
 // State to manage user interactions
 const userStates = {}; // { chatId: { step: 'awaiting_amount' | 'awaiting_email' | 'awaiting_withdrawal_amount' | 'awaiting_bank_details' | 'awaiting_wallet_address', data: {} } }
 
-// Function to set up webhook (called once on deployment)
+/**
+ * Sets up the Telegram webhook for the bot.
+ * Checks if the webhook is already set to the correct URL before setting.
+ */
 async function setupWebhook() {
     const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL;
+
     if (!webhookUrl) {
-        console.error('TELEGRAM_WEBHOOK_URL is not set!');
+        console.error('TELEGRAM_WEBHOOK_URL environment variable is not set!');
         return;
     }
+
     try {
-        await bot.setWebhook(webhookUrl);
-        console.log(`Telegram webhook set to: ${webhookUrl}`);
+        const webhookInfo = await bot.getWebhookInfo();
+        if (webhookInfo.url !== webhookUrl) {
+            await bot.setWebhook(webhookUrl);
+            console.log(`✅ Telegram webhook successfully set to: ${webhookUrl}`);
+        } else {
+            console.log(`➡️ Telegram webhook already correctly set to: ${webhookUrl}`);
+        }
     } catch (error) {
-        console.error('Error setting Telegram webhook:', error.message);
+        console.error('❌ Error setting Telegram webhook:', error.message);
+        // Optionally, throw the error or handle it more robustly
     }
 }
 
-// Function to process incoming updates from Vercel's /api/bot
+/**
+ * Processes incoming Telegram updates (called by Vercel's API endpoint).
+ * @param {object} body - The raw update body from Telegram.
+ */
 async function processUpdate(body) {
     try {
-        bot.processUpdate(body);
+        bot.processUpdate(body); // This line handles the update and triggers bot.on('message'), etc.
     } catch (error) {
-        console.error('Error processing Telegram update:', error.message);
+        console.error('❌ Error processing Telegram update:', error.message);
     }
 }
 
-// Function to send messages from outside (e.g., webhook handler)
+/**
+ * Sends a message to a Telegram chat.
+ * @param {number} chatId - The ID of the chat to send the message to.
+ * @param {string} message - The message text.
+ * @param {object} options - Optional message parameters (parse_mode, reply_markup, etc.).
+ */
 async function sendTelegramMessage(chatId, message, options = {}) {
     try {
         await bot.sendMessage(chatId, message, options);
     } catch (error) {
-        console.error(`Error sending message to chat ${chatId}:`, error.message);
+        console.error(`❌ Error sending message to chat ${chatId}:`, error.message);
     }
 }
 
@@ -87,7 +106,7 @@ bot.onText(/💰 Balance/, async (msg) => {
     bot.sendMessage(
         chatId,
         BOT_MESSAGES.BALANCE_INFO(user.balance, pendingDeposits),
-        { parse_mode: 'Markdown', ...MAIN_MENU_KEYDARD }
+        { parse_mode: 'Markdown', ...MAIN_MENU_KEYBOARD }
     );
 });
 
@@ -319,6 +338,7 @@ bot.on('message', async (msg) => {
                     ]
                 }
             });
+            return;
         }
 
         const reference = generateUniqueRef(telegramId, 'usdt_withdrawal');
