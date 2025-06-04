@@ -1,4 +1,4 @@
-// api/bot.js
+// api/bot.js (for Vercel deployment)
 const TelegramBot = require('node-telegram-bot-api');
 const { connectDB, updateTransactionStatus, getOrCreateUser, updateUserBalance } = require('../utils/db');
 const { registerBotHandlers } = require('../utils/bot_handlers'); // Import handlers
@@ -18,8 +18,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 registerBotHandlers(bot);
 
 // Connect to DB once when the serverless function is "cold started"
-// Ensure MONGODB_URL is passed here for Vercel environment variables
-connectDB(process.env.MONGODB_URL).then(() => {
+connectDB().then(() => {
     console.log('✅ Database connected for Vercel deployment.');
 }).catch(err => {
     console.error('❌ Database connection error for Vercel deployment:', err);
@@ -27,8 +26,35 @@ connectDB(process.env.MONGODB_URL).then(() => {
     // For Vercel, simply logging and letting the function fail might be sufficient.
 });
 
-// Removed setupWebhook() from here. It's better to set it once externally
-// via the Telegram API or a dedicated deployment script/Vercel's build process.
+// Set up the webhook
+async function setupWebhook() {
+    try {
+        const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL;
+        if (!webhookUrl) {
+            console.error('TELEGRAM_WEBHOOK_URL is not set!');
+            return;
+        }
+
+        // Check current webhook info
+        const webhookInfo = await bot.getWebhookInfo();
+        if (webhookInfo.url === webhookUrl) {
+            console.log(`➡️ Telegram webhook already correctly set to: ${webhookUrl}`);
+        } else {
+            const success = await bot.setWebhook(webhookUrl);
+            if (success) {
+                console.log(`✅ Telegram webhook successfully set to: ${webhookUrl}`);
+            } else {
+                console.error(`❌ Failed to set Telegram webhook to: ${webhookUrl}`);
+            }
+        }
+    } catch (error) {
+        console.error('❌ Error setting Telegram webhook:', error.message);
+    }
+}
+
+// Setup webhook on every cold start
+setupWebhook();
+
 
 // Telegram webhook endpoint
 app.post('/api/bot', async (req, res) => {
@@ -47,13 +73,6 @@ app.post('/api/webhook', async (req, res) => {
     console.log('Received Paystack webhook event.');
 
     const secret = process.env.PAYSTACK_SECRET_KEY; // Your Paystack secret key
-    
-    // Crucial check: Ensure secret exists before using it
-    if (!secret) {
-        console.error('PAYSTACK_SECRET_KEY is not set! Cannot verify Paystack webhook signature.');
-        return res.status(500).send('Server configuration error');
-    }
-
     const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(req.body)).digest('hex');
 
     if (hash !== req.headers['x-paystack-signature']) {

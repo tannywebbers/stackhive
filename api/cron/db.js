@@ -5,16 +5,13 @@ const { Schema } = mongoose;
 let isConnected = false; // Flag to track connection status
 
 // Function to connect to MongoDB
-const connectDB = async (dbUri) => { // dbUri is correctly expected as an argument
+const connectDB = async (dbUri) => {
     if (isConnected && mongoose.connection.readyState === 1) { // Check if already connected and connection is open
         console.log('\x1b[36m%s\x1b[0m', '💡 Reusing existing MongoDB connection.'); // Prettier log
         return;
     }
     // If not connected, or if connection is broken (readyState != 1), try to connect
     try {
-        if (!dbUri) { // Added a check to explicitly throw error if dbUri is missing
-            throw new Error('MongoDB URI is not provided to connectDB function.');
-        }
         await mongoose.connect(dbUri, {
             // These options are deprecated in Mongoose 6+ and can usually be removed
             // useNewUrlParser: true,

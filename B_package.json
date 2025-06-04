@@ -5,16 +5,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/tannywebbers/stackhive.git"
-  },
+  "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/tannywebbers/stackhive/issues"
-  },
-  "homepage": "https://github.com/tannywebbers/stackhive#readme",
   "description": "",
   "dependencies": {
     "axios": "^1.9.0",
@@ -22,7 +15,9 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "mongoose": "^8.15.1",
+    "ngrok": "^5.0.0-beta.2",
     "node-telegram-bot-api": "^0.66.0",
-    "vercel": "^42.3.0"
+    "nodemon": "^3.1.10",
+    "vercel": "^41.0.2"
   }
 }
