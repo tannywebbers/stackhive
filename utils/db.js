@@ -1,154 +1,181 @@
 // utils/db.js
 const mongoose = require('mongoose');
+const { Schema } = mongoose;
 
-// MongoDB User Schema
+let isConnected = false; // Flag to track connection status
+
+// Function to connect to MongoDB
+const connectDB = async (dbUri) => {
+    if (isConnected && mongoose.connection.readyState === 1) { // Check if already connected and connection is open
+        console.log('\x1b[36m%s\x1b[0m', '💡 Reusing existing MongoDB connection.'); // Prettier log
+        return;
+    }
+    // If not connected, or if connection is broken (readyState != 1), try to connect
+    try {
+        await mongoose.connect(dbUri, {
+            // These options are deprecated in Mongoose 6+ and can usually be removed
+            // useNewUrlParser: true,
+            // useUnifiedTopology: true,
+        });
+        isConnected = true;
+        console.log('\x1b[32m%s\x1b[0m', '✅ MongoDB Connected Successfully!'); // Prettier success log
+    } catch (error) {
+        isConnected = false;
+        console.error('\x1b[31m%s\x1b[0m', '❌ MongoDB Connection Error:'); // Prettier error log
+        console.error(error); // Log the full error object for debugging
+        throw error; // Re-throw to allow calling script (local_dev.js) to handle exit
+    }
+};
+
+// User Schema
 const userSchema = new mongoose.Schema({
-    telegramId: { type: Number, required: true, unique: true },
-    firstName: String,
-    username: String,
+    telegramId: { type: Number, required: true, unique: true, index: true },
+    firstName: { type: String, required: true },
+    username: { type: String },
     balance: { type: Number, default: 0 },
-    walletAddress: String, // For crypto withdrawals
-    paystackRecipientCode: String, // For Naira withdrawals
-    referralLink: String, // Unique referral link for the user
-    referredBy: { type: Number, ref: 'User' }, // Telegram ID of the referrer
     transactions: [{
-        type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'referral_bonus'], required: true },
+        type: { type: String, enum: ['deposit', 'withdrawal', 'investment', 'referral_bonus', 'investment_payout'], required: true },
         amount: { type: Number, required: true },
-        status: { type: String, enum: ['pending', 'completed', 'failed', 'reversed'], default: 'pending' },
-        reference: String, // Paystack reference or internal reference
         date: { type: Date, default: Date.now },
-        details: mongoose.Schema.Types.Mixed // Store additional details (e.g., bank info, plan)
+        status: { type: String, enum: ['pending', 'completed', 'failed', 'pending_manual_review', 'declined'], default: 'pending' },
+        reference: { type: String, required: true, unique: true },
+        metadata: { type: Schema.Types.Mixed }
     }],
-    investments: [{ // Separate schema for investment tracking
-        planId: String,
-        amount: Number,
+    bankDetails: {
+        accountNumber: { type: String },
+        bankName: { type: String },
+        accountName: { type: String },
+        recipientCode: { type: String }
+    },
+    referrerId: { type: Number, default: null, index: true },
+    referralBonusEarned: { type: Number, default: 0 },
+    hasReceivedWelcomeBonus: { type: Boolean, default: false },
+    investments: [{
+        planId: { type: String, required: true },
+        amount: { type: Number, required: true },
         startDate: { type: Date, default: Date.now },
-        maturityDate: Date,
-        roi: String, // e.g., "1% daily"
+        maturityDate: { type: Date, required: true },
+        projectedReturn: { type: Number, required: true },
         status: { type: String, enum: ['active', 'matured', 'cancelled'], default: 'active' },
-        reference: String // Link to deposit transaction
-    }],
-    createdAt: { type: Date, default: Date.now }
+        reference: { type: String, required: true, unique: true }
+    }]
 });
 
 const User = mongoose.model('User', userSchema);
 
-// Connect to MongoDB
-async function connectDB() {
-    if (mongoose.connection.readyState === 0) { // Check if not already connected
-        try {
-            await mongoose.connect(process.env.MONGODB_URI, {
-                // useNewUrlParser: true, // Deprecated in Mongoose 6+
-                // useUnifiedTopology: true, // Deprecated in Mongoose 6+
-            });
-            console.log('✅ Database connected');
-        } catch (error) {
-            console.error('❌ DB connection failed:', error.message);
-            // In a Vercel serverless environment, this might just crash the function,
-            // which Vercel handles by re-invoking. For local, you might want to exit.
-            // process.exit(1);
-            throw error; // Re-throw to indicate connection failure
-        }
-    }
-}
+// --- Utility Functions ---
 
-// Helper function to initialize or get user
-async function getOrCreateUser(telegramId, firstName, username, referrerId = null) {
-    let user = await User.findOne({ telegramId });
-    if (!user) {
-        user = new User({
-            telegramId,
-            firstName,
-            username,
-            referralLink: `${process.env.TELEGRAM_WEBHOOK_URL}?start=${telegramId}`, // Example: direct referral link to bot
-            referredBy: referrerId // Assign referrer if provided
-        });
+// Function to get or create a user
+const getOrCreateUser = async (telegramId, firstName, username, referrerId = null) => {
+    try {
+        let user = await User.findOne({ telegramId });
+        if (!user) {
+            user = new User({ telegramId, firstName, username, referrerId });
+            await user.save();
+            console.log(`\x1b[36m%s\x1b[0m`, `👤 New user created: ${telegramId}`); // Prettier log
+        }
+        return user;
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Error in getOrCreateUser:');
+        console.error(error);
+        throw error;
+    }
+};
+
+// Function to update user balance
+const updateUserBalance = async (telegramId, amount) => {
+    try {
+        const user = await User.findOneAndUpdate(
+            { telegramId },
+            { $inc: { balance: amount } },
+            { new: true }
+        );
+        return user;
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Error in updateUserBalance:');
+        console.error(error);
+        throw error;
+    }
+};
+
+// Function to add a transaction
+const addTransaction = async (telegramId, type, amount, status, reference, metadata = {}) => {
+    try {
+        const user = await User.findOne({ telegramId });
+        if (!user) {
+            throw new Error('User not found');
+        }
+        user.transactions.push({ type, amount, status, reference, metadata });
         await user.save();
-        console.log(`New user created: ${username || firstName} (${telegramId})`);
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Error in addTransaction:');
+        console.error(error);
+        throw error;
     }
-    return user;
-}
+};
 
-// Update user balance
-async function updateUserBalance(userId, amount) {
-    const user = await User.findOneAndUpdate(
-        { telegramId: userId },
-        { $inc: { balance: amount } },
-        { new: true } // Return the updated document
-    );
-    return user ? user.balance : 0;
-}
-
-// Add a transaction record
-async function addTransaction(userId, type, amount, status, reference = null, details = {}) {
-    const user = await User.findOneAndUpdate(
-        { telegramId: userId },
-        {
-            $push: {
-                transactions: {
-                    type,
-                    amount,
-                    status,
-                    reference,
-                    details
-                }
-            }
-        },
-        { new: true }
-    );
-    return user;
-}
-
-// Update an existing transaction status
-async function updateTransactionStatus(reference, status, userId = null, newDetails = {}) {
-    const query = { 'transactions.reference': reference };
-    if (userId) {
-        query.telegramId = userId;
+// Function to save bank details
+const saveBankDetails = async (telegramId, accountNumber, bankName, accountName, recipientCode = null) => {
+    try {
+        const user = await User.findOneAndUpdate(
+            { telegramId },
+            {
+                bankDetails: { accountNumber, bankName, accountName, recipientCode }
+            },
+            { new: true }
+        );
+        return user;
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Error in saveBankDetails:');
+        console.error(error);
+        throw error;
     }
-    const update = {
-        $set: {
-            'transactions.$.status': status,
-            'transactions.$.details': newDetails
+};
+
+// Function to update transaction status
+const updateTransactionStatus = async (reference, status, newMetadata = {}) => {
+    try {
+        const user = await User.findOne({ 'transactions.reference': reference });
+        if (!user) {
+            throw new Error('Transaction not found');
         }
-    };
-    const user = await User.findOneAndUpdate(query, update, { new: true });
-    return user;
-}
+        const transaction = user.transactions.find(t => t.reference === reference);
+        if (transaction) {
+            transaction.status = status;
+            transaction.metadata = { ...transaction.metadata, ...newMetadata };
+            await user.save();
+        }
+        return user;
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Error in updateTransactionStatus:');
+        console.error(error);
+        throw error;
+    }
+};
 
-// Save Paystack recipient code for withdrawals
-async function savePaystackRecipientCode(userId, recipientCode) {
-    const user = await User.findOneAndUpdate(
-        { telegramId: userId },
-        { paystackRecipientCode: recipientCode },
-        { new: true }
-    );
-    return user;
-}
+// Function to delete a user
+const deleteUser = async (telegramId) => {
+    try {
+        const result = await User.deleteOne({ telegramId });
+        return result.deletedCount;
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Error deleting user:');
+        console.error(error);
+        throw error;
+    }
+};
 
-// Get Paystack recipient code
-async function getPaystackRecipientCode(userId) {
-    const user = await User.findOne({ telegramId: userId });
-    return user ? user.paystackRecipientCode : null;
-}
-
-// Save or update wallet address
-async function saveWalletAddress(userId, address) {
-    const user = await User.findOneAndUpdate(
-        { telegramId: userId },
-        { walletAddress: address },
-        { new: true }
-    );
-    return user;
-}
-
+// --- Exports ---
 module.exports = {
-    connectDB,
-    User, // Export the model directly for schema operations
+    connectDB, // Export the connection function
+    User, // Export the User model
+    mongoose, // Export mongoose instance for graceful disconnect in local_dev.js
+
+    // Export all other utility functions
     getOrCreateUser,
     updateUserBalance,
     addTransaction,
+    saveBankDetails,
     updateTransactionStatus,
-    savePaystackRecipientCode,
-    getPaystackRecipientCode,
-    saveWalletAddress
+    deleteUser,
 };

@@ -1,155 +1,153 @@
 // utils/paystack.js
 const axios = require('axios');
-const crypto = require('crypto');
-const { PAYSTACK_WEBHOOK_URL } = require('../config/constants'); // Will be replaced by env var
 
-// Access environment variables directly here, as dotenv should be loaded once in main entry or Vercel config
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY;
-const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET;
+const PAYSTACK_AUTHORIZATION_URL = 'https://api.paystack.co'; // Keep this consistent
 
-const PAYSTACK_API_BASE_URL = 'https://api.paystack.co';
+// Ensure secret key is set
+if (!PAYSTACK_SECRET_KEY) {
+    console.error('PAYSTACK_SECRET_KEY is not set in environment variables!');
+    // In a production app, you might want to throw an error or exit here.
+}
 
-/**
- * Initializes a Paystack transaction.
- * @param {string} email - User's email.
- * @param {number} amount - Amount in NGN (will be converted to kobo).
- * @param {object} metadata - Custom metadata for the transaction.
- * @returns {Promise<object>} - Paystack initialization response.
- */
-async function initializeTransaction(email, amount, metadata) {
+// Function to initialize a payment
+const initializeTransaction = async (email, amount, metadata = {}) => {
     try {
-        const response = await axios.post(`${PAYSTACK_API_BASE_URL}/transaction/initialize`, {
-            email: email,
-            amount: amount * 100, // amount in kobo
-            currency: 'NGN',
-            callback_url: process.env.PAYSTACK_WEBHOOK_URL, // Use the Vercel webhook URL
-            metadata: metadata // Pass metadata directly
-        }, {
-            headers: {
-                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                'Content-Type': 'application/json'
+        const response = await axios.post(
+            `${PAYSTACK_AUTHORIZATION_URL}/transaction/initialize`,
+            {
+                email: email,
+                amount: amount * 100, // Paystack expects amount in kobo
+                metadata: metadata,
+                callback_url: process.env.PAYSTACK_WEBHOOK_URL // Assuming this is set up correctly for webhooks
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                    'Content-Type': 'application/json'
+                }
             }
-        });
-        return response.data;
+        );
+        return response.data; // Contains authorization_url, reference etc.
     } catch (error) {
-        console.error('Paystack transaction initialization error:', error.response ? error.response.data : error.message);
-        throw new Error('Failed to initialize Paystack transaction');
+        console.error('Paystack initialization error:', error.response ? error.response.data : error.message);
+        throw error;
     }
-}
+};
 
-/**
- * Verifies a Paystack transaction.
- * @param {string} reference - Transaction reference.
- * @returns {Promise<object>} - Paystack verification response.
- */
-async function verifyTransaction(reference) {
+// NEW FUNCTION: Get list of Nigerian banks
+const getBankCodes = async () => {
     try {
-        const response = await axios.get(`${PAYSTACK_API_BASE_URL}/transaction/verify/${reference}`, {
-            headers: {
-                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+        const response = await axios.get(
+            `${PAYSTACK_AUTHORIZATION_URL}/bank?country=nigeria&use_cursor=true`,
+            {
+                headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+                }
             }
-        });
-        return response.data;
-    } catch (error) {
-        console.error('Paystack transaction verification error:', error.response ? error.response.data : error.message);
-        throw new Error('Failed to verify Paystack transaction');
-    }
-}
-
-/**
- * Initiates a Paystack transfer (withdrawal).
- * @param {string} recipientCode - Paystack recipient code.
- * @param {number} amount - Amount in NGN (will be converted to kobo).
- * @param {string} reference - Unique transfer reference.
- * @param {string} reason - Reason for transfer.
- * @returns {Promise<object>} - Paystack transfer response.
- */
-async function initiateTransfer(recipientCode, amount, reference, reason) {
-    try {
-        const response = await axios.post(`${PAYSTACK_API_BASE_URL}/transfer`, {
-            source: "balance", // Transfer from your Paystack balance
-            reason: reason,
-            amount: amount * 100, // amount in kobo
-            recipient: recipientCode,
-            reference: reference
-        }, {
-            headers: {
-                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        return response.data;
-    } catch (error) {
-        console.error('Paystack transfer initiation error:', error.response ? error.response.data : error.message);
-        throw new Error('Failed to initiate Paystack transfer');
-    }
-}
-
-/**
- * Creates a Paystack transfer recipient.
- * @param {string} name - Recipient name.
- * @param {string} account_number - Recipient account number.
- * @param {string} bank_code - Recipient bank code.
- * @returns {Promise<object>} - Paystack recipient creation response.
- */
-async function createTransferRecipient(name, account_number, bank_code) {
-    try {
-        const response = await axios.post(`${PAYSTACK_API_BASE_URL}/transferrecipient`, {
-            type: "nuban", // Nigerian bank account
-            name: name,
-            account_number: account_number,
-            bank_code: bank_code,
-            currency: "NGN"
-        }, {
-            headers: {
-                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-        return response.data;
-    } catch (error) {
-        console.error('Paystack create recipient error:', error.response ? error.response.data : error.message);
-        throw new Error('Failed to create Paystack transfer recipient');
-    }
-}
-
-/**
- * Verifies Paystack webhook signature.
- * @param {string} signature - The X-Paystack-Signature header value.
- * @param {object} payload - The raw request body.
- * @returns {boolean} - True if signature is valid, false otherwise.
- */
-function verifyWebhookSignature(signature, payload) {
-    const hash = crypto.createHmac('sha512', PAYSTACK_WEBHOOK_SECRET)
-                       .update(JSON.stringify(payload))
-                       .digest('hex');
-    return hash === signature;
-}
-
-/**
- * Fetches bank codes from Paystack.
- * @returns {Promise<Array>} - List of bank objects.
- */
-async function getBankCodes() {
-    try {
-        const response = await axios.get(`${PAYSTACK_API_BASE_URL}/bank`, {
-            headers: {
-                Authorization: `Bearer ${PAYSTACK_PUBLIC_KEY}` // Public key is fine for this
-            }
-        });
-        return response.data.data;
+        );
+        return response.data.data; // Array of bank objects {id, name, slug, code, longcode}
     } catch (error) {
         console.error('Error fetching bank codes:', error.response ? error.response.data : error.message);
-        throw new Error('Failed to fetch bank codes');
+        throw error;
     }
-}
+};
+
+// NEW FUNCTION: Resolve account number to get account name
+const resolveAccount = async (accountNumber, bankCode) => {
+    try {
+        const response = await axios.get(
+            `${PAYSTACK_AUTHORIZATION_URL}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+                }
+            }
+        );
+        return response.data; // Contains {status, message, data: {account_number, account_name, bank_id}}
+    } catch (error) {
+        console.error('Error resolving account number:', error.response ? error.response.data : error.message);
+        throw error;
+    }
+};
+
+
+// NEW FUNCTION: Create a transfer recipient
+const createTransferRecipient = async (name, accountNumber, bankCode) => {
+    try {
+        const response = await axios.post(
+            `${PAYSTACK_AUTHORIZATION_URL}/transferrecipient`,
+            {
+                type: 'nuban', // Nigerian Universal Bank Account Number
+                name: name,
+                account_number: accountNumber,
+                bank_code: bankCode,
+                currency: 'NGN'
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        return response.data; // Contains {status, message, data: {recipient_code, ...}}
+    } catch (error) {
+        console.error('Error creating transfer recipient:', error.response ? error.response.data : error.message);
+        throw error;
+    }
+};
+
+// Function to initiate a transfer
+const initiateTransfer = async (recipientCode, amount, reference, reason) => {
+    try {
+        const response = await axios.post(
+            `${PAYSTACK_AUTHORIZATION_URL}/transfer`,
+            {
+                source: 'balance', // Transfer from Paystack balance
+                amount: amount * 100, // Amount in kobo
+                recipient: recipientCode,
+                reason: reason,
+                reference: reference
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        return response.data; // Contains {status, message, data: {id, status, ...}}
+    } catch (error) {
+        console.error('Paystack transfer initiation error:', error.response ? error.response.data : error.message);
+        throw error;
+    }
+};
+
+// Function to verify a transaction (e.g., from webhook or on demand)
+const verifyTransaction = async (reference) => {
+    try {
+        const response = await axios.get(
+            `${PAYSTACK_AUTHORIZATION_URL}/transaction/verify/${reference}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+                }
+            }
+        );
+        return response.data; // Contains {status, message, data: {amount, currency, status, ...}}
+    } catch (error) {
+        console.error('Paystack verification error:', error.response ? error.response.data : error.message);
+        throw error;
+    }
+};
+
 
 module.exports = {
     initializeTransaction,
-    verifyTransaction,
+    getBankCodes, // Export new functions
+    resolveAccount, // Export new functions
+    createTransferRecipient, // Export new functions
     initiateTransfer,
-    createTransferRecipient,
-    verifyWebhookSignature,
-    getBankCodes
+    verifyTransaction
 };

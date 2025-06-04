@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/payouts",
+      "schedule": "*/5 * * * *" // Every 5 minutes
+    }
+  ]
+}

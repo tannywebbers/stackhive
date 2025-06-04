@@ -24,11 +24,10 @@ app.get('/', (req, res) => {
 });
 
 // Start the server for local development
-app.listen(PORT, async () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Telegram Bot Webhook URL for local testing: http://localhost:${PORT}/api/bot`);
-    console.log(`Paystack Webhook URL for local testing: http://localhost:${PORT}/api/webhook`);
-
+ app.listen(PORT, async () => {
+    /**console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Telegram Bot Webhook URL for local testing: http://localhost:${PORT}/api/bot`); **/
+   /** console.log(`Paystack Webhook URL for local testing: http://localhost:${PORT}/api/webhook`); **/
     // Connect to DB once for local development
     await connectDB();
 
