@@ -15,9 +15,9 @@ const connectDB = async (dbUri) => {
             throw new Error('MongoDB URI is not provided to connectDB function.');
         }
         await mongoose.connect(dbUri, {
-            serverSelectionTimeoutMS: 30000,
+            serverSelectionTimeoutMS: 90000,
             socketTimeoutMS: 45000,
-            connectTimeoutMS: 30000,
+            connectTimeoutMS: 60000,
             bufferCommands: false, // Critical for Vercel
             // useNewUrlParser: true, // Deprecated in Mongoose 6+
             // useUnifiedTopology: true, // Deprecated in Mongoose 6+
