@@ -1,39 +1,83 @@
 // api/bot.js
 const TelegramBot = require('node-telegram-bot-api');
 const { connectDB, updateTransactionStatus, getOrCreateUser, updateUserBalance } = require('../utils/db');
-const { registerBotHandlers } = require('../utils/bot_handlers'); // Import handlers
-const { verifyTransaction } = require('../utils/paystack'); // Import verifyTransaction
-const { BOT_MESSAGES } = require('../config/constants'); // For sending confirmation messages
+const { registerBotHandlers } = require('../utils/bot_handlers');
+const { verifyTransaction } = require('../utils/paystack');
+const { BOT_MESSAGES } = require('../config/constants');
 const express = require('express');
-const crypto = require('crypto'); // For Paystack webhook signature verification
-const app = express();
+const crypto = require('crypto');
 
-// Middleware to parse JSON bodies (for Telegram and Paystack webhooks)
+const app = express();
+let isDbConnected = false; // Add a flag to track DB connection state
+
+// Middleware to parse JSON bodies
 app.use(express.json());
 
 // Initialize bot without polling for webhook
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
-// Register all bot handlers
-registerBotHandlers(bot);
+// --- Connect to DB and Register Handlers ASYNCHRONOUSLY at Cold Start ---
+async function initializeBotAndDB() {
+    try {
+        console.log('Initiating DB connection and bot setup...');
+        await connectDB(process.env.MONGODB_URL);
+        isDbConnected = true; // Set flag after successful connection
+        console.log('✅ Database connected for Vercel deployment. Registering bot handlers.');
+        
+        // Register bot handlers ONLY after DB connection is successful
+        registerBotHandlers(bot);
 
-// Connect to DB once when the serverless function is "cold started"
-// Ensure MONGODB_URL is passed here for Vercel environment variables
-connectDB(process.env.MONGODB_URL).then(() => {
-    console.log('✅ Database connected for Vercel deployment.');
-}).catch(err => {
-    console.error('❌ Database connection error for Vercel deployment:', err);
-    // In a real application, you might want to send an error message to an admin.
-    // For Vercel, simply logging and letting the function fail might be sufficient.
+        // Optional: Set webhook here if you absolutely need it to run on cold start,
+        // but typically better to set once via a separate script or Vercel config.
+        // const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL;
+        // if (webhookUrl) {
+        //     await bot.setWebhook(webhookUrl);
+        //     console.log(`Webhook set to: ${webhookUrl}`);
+        // } else {
+        //     console.warn('TELEGRAM_WEBHOOK_URL not set. Webhook not explicitly set by bot.');
+        // }
+
+    } catch (err) {
+        isDbConnected = false; // Ensure flag is false on error
+        console.error('❌ FATAL: Database connection or bot setup failed:', err);
+        // In a real application, consider a way to notify yourself.
+        // For Vercel, this function will simply fail the current request.
+        // Subsequent requests might re-attempt initialization.
+    }
+}
+
+// Call the initialization function. This will run once per cold start.
+// Subsequent invocations of the same warm function instance will skip it due to 'isConnected' in db.js.
+initializeBotAndDB();
+
+
+// --- MIDDLEWARE TO ENSURE DB IS CONNECTED FOR REQUESTS ---
+// This middleware will block requests until DB is connected.
+// If the connection fails, it will return an error to Telegram/Paystack.
+app.use(async (req, res, next) => {
+    if (isDbConnected) {
+        return next(); // DB is already connected, proceed
+    }
+
+    // If not connected, try to connect again or wait for ongoing connection
+    try {
+        console.log('DB not yet connected, attempting connection or waiting for initialization...');
+        await connectDB(process.env.MONGODB_URL); // This will either connect or reuse existing pending connection
+        isDbConnected = true; // Mark as connected
+        next(); // Proceed once connected
+    } catch (err) {
+        console.error('❌ Request received before DB connection established and failed:', err);
+        // Respond with an error to the client (Telegram/Paystack)
+        res.status(503).send('Database connection unavailable. Please try again.');
+    }
 });
 
-// Removed setupWebhook() from here. It's better to set it once externally
-// via the Telegram API or a dedicated deployment script/Vercel's build process.
 
 // Telegram webhook endpoint
 app.post('/api/bot', async (req, res) => {
     // console.log('Received Telegram webhook update:', req.body); // Log for debugging
     try {
+        // Process update only if DB is connected (guaranteed by middleware above)
         await bot.processUpdate(req.body);
         res.status(200).send('OK');
     } catch (error) {
@@ -46,9 +90,8 @@ app.post('/api/bot', async (req, res) => {
 app.post('/api/webhook', async (req, res) => {
     console.log('Received Paystack webhook event.');
 
-    const secret = process.env.PAYSTACK_SECRET_KEY; // Your Paystack secret key
+    const secret = process.env.PAYSTACK_SECRET_KEY;
     
-    // Crucial check: Ensure secret exists before using it
     if (!secret) {
         console.error('PAYSTACK_SECRET_KEY is not set! Cannot verify Paystack webhook signature.');
         return res.status(500).send('Server configuration error');
@@ -64,10 +107,9 @@ app.post('/api/webhook', async (req, res) => {
     const event = req.body;
     console.log(`Paystack event type: ${event.event}`);
 
-    // Handle successful payment
     if (event.event === 'charge.success') {
         const reference = event.data.reference;
-        const amount = event.data.amount / 100; // Amount is in kobo, convert to naira
+        const amount = event.data.amount / 100;
         const userId = event.data.metadata ? event.data.metadata.userId : null;
         const chatId = event.data.metadata ? event.data.metadata.chatId : null;
 
@@ -80,17 +122,13 @@ app.post('/api/webhook', async (req, res) => {
             const transaction = await updateTransactionStatus(reference, 'completed', userId);
 
             if (transaction && transaction.type === 'deposit' && transaction.status === 'completed') {
-                await updateUserBalance(userId, amount); // Add deposit amount to user balance
+                await updateUserBalance(userId, amount);
                 console.log(`Deposit confirmed for user ${userId}, amount ${amount}.`);
 
-                if (chatId) { // Send confirmation message to user
+                if (chatId) {
                     await bot.sendMessage(chatId, BOT_MESSAGES.PAYMENT_CONFIRMED(amount));
-                    // Check for referrer bonus here if needed based on transaction data
                 }
             } else if (transaction && transaction.type === 'withdrawal' && transaction.status === 'pending') {
-                 // If it's a withdrawal confirmed by Paystack, mark it complete
-                 // (This is less common, usually transfer success/failure webhooks are different events)
-                 // For now, our withdrawal is marked initiated, and we'd rely on a 'transfer.success' event.
                  console.log(`Paystack webhook: Withdrawal reference ${reference} might need attention.`);
             }
         } catch (error) {
@@ -101,11 +139,9 @@ app.post('/api/webhook', async (req, res) => {
         const recipientCode = event.data.recipient.recipient_code;
 
         try {
-            const transaction = await updateTransactionStatus(reference, 'completed'); // Update status
+            const transaction = await updateTransactionStatus(reference, 'completed');
             if (transaction && transaction.type === 'withdrawal') {
                 console.log(`Withdrawal confirmed as successful for reference ${reference}.`);
-                // You might want to get the user by transaction reference and send a message
-                // This requires finding user by transaction.reference which updateTransactionStatus can do
             }
         } catch (error) {
             console.error(`Error processing successful transfer for reference ${reference}:`, error);
@@ -115,12 +151,11 @@ app.post('/api/webhook', async (req, res) => {
         const reason = event.data.reason;
 
         try {
-            const transaction = await updateTransactionStatus(reference, 'failed'); // Update status
+            const transaction = await updateTransactionStatus(reference, 'failed');
             if (transaction && transaction.type === 'withdrawal' && transaction.status === 'failed') {
-                // Find the user who initiated this withdrawal
-                const user = await getOrCreateUser(transaction.metadata.userId); // Assuming userId is in metadata
+                const user = await getOrCreateUser(transaction.metadata.userId);
                 if (user) {
-                    await updateUserBalance(user.telegramId, transaction.amount); // Revert balance
+                    await updateUserBalance(user.telegramId, transaction.amount);
                     await bot.sendMessage(user.telegramId, `❌ Your withdrawal of ₦${transaction.amount.toFixed(2)} with reference \`${reference}\` failed: ${reason}. Your balance has been reverted.`);
                     console.log(`Withdrawal failed for reference ${reference}, balance reverted for user ${user.telegramId}.`);
                 }
@@ -129,10 +164,8 @@ app.post('/api/webhook', async (req, res) => {
             console.error(`Error processing failed/reversed transfer for reference ${reference}:`, error);
         }
     }
-    // You might want to handle other event types like 'charge.failed', 'transfer.reversed' etc.
 
-    res.status(200).send('OK'); // Always respond with 200 OK to Paystack
+    res.status(200).send('OK');
 });
 
-// Export the app for Vercel
 module.exports = app;

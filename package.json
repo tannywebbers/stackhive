@@ -2,6 +2,7 @@
   "name": "bet",
   "version": "1.0.0",
   "main": "index.js",
+  "dev": "local_dev.js"
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

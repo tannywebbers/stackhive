@@ -11,8 +11,8 @@ if (!token) {
     process.exit(1);
 }
 
-const MONGODB_URI = process.env.MONGODB_URL; // Use MONGODB_URL as per your db.js (not MONGODB_URI)
-if (!MONGODB_URI) {
+const MONGODB_URL = process.env.MONGODB_URL; // Use MONGODB_URL as per your db.js (not MONGODB_URI)
+if (!MONGODB_URL) {
     console.error('\x1b[31m%s\x1b[0m', '❌ ERROR: MONGODB_URL is not set in your .env file.');
     console.error('\x1b[33m%s\x1b[0m', '💡 Please ensure your .env file has MONGODB_URL defined.');
     process.exit(1);

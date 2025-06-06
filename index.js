@@ -33,12 +33,12 @@ app.listen(PORT, async () => {
 
     // Connect to DB once for local development
     // Pass the MONGODB_URL from environment variables
-    const MONGODB_URI = process.env.MONGODB_URL;
-    if (!MONGODB_URI) {
+    const MONGODB_URL = process.env.MONGODB_URL;
+    if (!MONGODB_URL) {
         console.error('\x1b[31m%s\x1b[0m', '❌ ERROR: MONGODB_URL is not set for local server.');
         process.exit(1);
     }
-    await connectDB(MONGODB_URI)
+    await connectDB(MONGODB_URL)
         .then(() => console.log('✅ Local MongoDB Connected for index.js!'))
         .catch(err => {
             console.error('❌ Local MongoDB Connection Error for index.js:', err);
