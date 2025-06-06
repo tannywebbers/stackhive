@@ -5,7 +5,7 @@ const { Schema } = mongoose;
 let isConnected = false; // Flag to track connection status
 
 // Function to connect to MongoDB
-const connectDB = async (dbUri) => { // dbUri is correctly expected as an argument
+const connectDB = async (dbUri) => {
     if (isConnected && mongoose.connection.readyState === 1) { // Check if already connected and connection is open
         console.log('\x1b[36m%s\x1b[0m', '💡 Reusing existing MongoDB connection.'); // Prettier log
         return;
@@ -16,6 +16,11 @@ const connectDB = async (dbUri) => { // dbUri is correctly expected as an argume
             throw new Error('MongoDB URI is not provided to connectDB function.');
         }
         await mongoose.connect(dbUri, {
+            // *** ADDED/MODIFIED THESE OPTIONS FOR VERCEL DEPLOYMENT ***
+            serverSelectionTimeoutMS: 30000, // Default is 30s in Mongoose 6, but good to be explicit
+            socketTimeoutMS: 45000,        // Close sockets after 45 seconds of inactivity
+            connectTimeoutMS: 30000,       // Establish connection within 30 seconds
+            bufferCommands: false,         // Disable Mongoose's buffering. Important for serverless.
             // These options are deprecated in Mongoose 6+ and can usually be removed
             // useNewUrlParser: true,
             // useUnifiedTopology: true,
