@@ -6,29 +6,32 @@ let isConnected = false; // Flag to track connection status
 
 // Function to connect to MongoDB
 const connectDB = async (dbUri) => {
-    if (isConnected && mongoose.connection.readyState === 1) {
-        console.log('\x1b[36m%s\x1b[0m', '💡 Reusing existing MongoDB connection.');
+    if (isConnected && mongoose.connection.readyState === 1) { // Check if already connected and connection is open
+        console.log('\x1b[36m%s\x1b[0m', '💡 Reusing existing MongoDB connection.'); // Prettier log
         return;
     }
+    // If not connected, or if connection is broken (readyState != 1), try to connect
     try {
-        if (!dbUri) {
+        if (!dbUri) { // Added a check to explicitly throw error if dbUri is missing
             throw new Error('MongoDB URI is not provided to connectDB function.');
         }
         await mongoose.connect(dbUri, {
-            serverSelectionTimeoutMS: 30000,
-            socketTimeoutMS: 45000,
-            connectTimeoutMS: 30000,
-            bufferCommands: false, // Critical for Vercel
-            // useNewUrlParser: true, // Deprecated in Mongoose 6+
-            // useUnifiedTopology: true, // Deprecated in Mongoose 6+
+            // *** ADDED/MODIFIED THESE OPTIONS FOR VERCEL DEPLOYMENT ***
+            serverSelectionTimeoutMS: 30000, // Default is 30s in Mongoose 6, but good to be explicit
+            socketTimeoutMS: 45000,        // Close sockets after 45 seconds of inactivity
+            connectTimeoutMS: 30000,       // Establish connection within 30 seconds
+            bufferCommands: false,         // Disable Mongoose's buffering. Important for serverless.
+            // These options are deprecated in Mongoose 6+ and can usually be removed
+            // useNewUrlParser: true,
+            // useUnifiedTopology: true,
         });
         isConnected = true;
-        console.log('\x1b[32m%s\x1b[0m', '✅ MongoDB Connected Successfully!');
+        console.log('\x1b[32m%s\x1b[0m', '✅ MongoDB Connected Successfully!'); // Prettier success log
     } catch (error) {
         isConnected = false;
-        console.error('\x1b[31m%s\x1b[0m', '❌ MongoDB Connection Error:');
-        console.error(error);
-        throw error;
+        console.error('\x1b[31m%s\x1b[0m', '❌ MongoDB Connection Error:'); // Prettier error log
+        console.error(error); // Log the full error object for debugging
+        throw error; // Re-throw to allow calling script (local_dev.js) to handle exit
     }
 };
 
@@ -44,17 +47,14 @@ const userSchema = new mongoose.Schema({
         date: { type: Date, default: Date.now },
         status: { type: String, enum: ['pending', 'completed', 'failed', 'pending_manual_review', 'declined'], default: 'pending' },
         reference: { type: String, required: true, unique: true },
-        metadata: { type: Schema.Types.Mixed } // Retaining metadata for flexibility
+        metadata: { type: Schema.Types.Mixed }
     }],
     bankDetails: {
         accountNumber: { type: String },
         bankName: { type: String },
         accountName: { type: String },
-        recipientCode: { type: String }, // Keep this field for Paystack recipient code
+        recipientCode: { type: String }
     },
-    // Adding walletAddress from the old schema
-    //walletAddress: { type: String }, // For crypto wallets etc.
-
     referrerId: { type: Number, default: null, index: true },
     referralBonusEarned: { type: Number, default: 0 },
     hasReceivedWelcomeBonus: { type: Boolean, default: false },
@@ -80,8 +80,7 @@ const getOrCreateUser = async (telegramId, firstName, username, referrerId = nul
         if (!user) {
             user = new User({ telegramId, firstName, username, referrerId });
             await user.save();
-            // Retain the prettier log, but ensure it logs useful info
-            console.log(`\x1b[36m%s\x1b[0m`, `👤 New user created: ${username || firstName} (${telegramId})`);
+            console.log(`\x1b[36m%s\x1b[0m`, `👤 New user created: ${telegramId}`); // Prettier log
         }
         return user;
     } catch (error) {
@@ -99,7 +98,7 @@ const updateUserBalance = async (telegramId, amount) => {
             { $inc: { balance: amount } },
             { new: true }
         );
-        return user; // Return the full user object for flexibility
+        return user;
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Error in updateUserBalance:');
         console.error(error);
@@ -107,7 +106,7 @@ const updateUserBalance = async (telegramId, amount) => {
     }
 };
 
-// Function to add a transaction (using metadata for flexibility)
+// Function to add a transaction
 const addTransaction = async (telegramId, type, amount, status, reference, metadata = {}) => {
     try {
         const user = await User.findOne({ telegramId });
@@ -123,15 +122,15 @@ const addTransaction = async (telegramId, type, amount, status, reference, metad
     }
 };
 
-// Function to save bank details (now includes recipientCode directly)
+// Function to save bank details
 const saveBankDetails = async (telegramId, accountNumber, bankName, accountName, recipientCode = null) => {
     try {
         const user = await User.findOneAndUpdate(
             { telegramId },
             {
-                bankDetails: { accountNumber, bankName, accountName, recipientCode } // recipientCode now part of bankDetails
+                bankDetails: { accountNumber, bankName, accountName, recipientCode }
             },
-            { new: true, upsert: true } // Use upsert to create if not exists
+            { new: true }
         );
         return user;
     } catch (error) {
@@ -141,7 +140,7 @@ const saveBankDetails = async (telegramId, accountNumber, bankName, accountName,
     }
 };
 
-// Function to update transaction status (using newMetadata to merge)
+// Function to update transaction status
 const updateTransactionStatus = async (reference, status, newMetadata = {}) => {
     try {
         const user = await User.findOne({ 'transactions.reference': reference });
@@ -151,29 +150,12 @@ const updateTransactionStatus = async (reference, status, newMetadata = {}) => {
         const transaction = user.transactions.find(t => t.reference === reference);
         if (transaction) {
             transaction.status = status;
-            // Merge new metadata with existing metadata
-            transaction.metadata = { ...(transaction.metadata || {}), ...newMetadata };
+            transaction.metadata = { ...transaction.metadata, ...newMetadata };
             await user.save();
         }
         return user;
     } catch (error) {
         console.error('\x1b[31m%s\x1b[0m', '❌ Error in updateTransactionStatus:');
-        console.error(error);
-        throw error;
-    }
-};
-
-// New function: Save or update wallet address
-const saveWalletAddress = async (telegramId, address) => {
-    try {
-        const user = await User.findOneAndUpdate(
-            { telegramId },
-            { walletAddress: address },
-            { new: true }
-        );
-        return user;
-    } catch (error) {
-        console.error('\x1b[31m%s\x1b[0m', '❌ Error in saveWalletAddress:');
         console.error(error);
         throw error;
     }
@@ -193,18 +175,15 @@ const deleteUser = async (telegramId) => {
 
 // --- Exports ---
 module.exports = {
-    connectDB,
+    connectDB, // Export the connection function
     User, // Export the User model
     mongoose, // Export mongoose instance for graceful disconnect in local_dev.js
 
-    // Export all utility functions
+    // Export all other utility functions
     getOrCreateUser,
     updateUserBalance,
     addTransaction,
     saveBankDetails,
     updateTransactionStatus,
-    saveWalletAddress, // Export the newly added function
-    deleteUser, // Export the existing deleteUser function
-    // Removed old getPaystackRecipientCode as it's now handled via fetching user.bankDetails.recipientCode
-    // Removed old savePaystackRecipientCode as it's now handled by saveBankDetails
+    deleteUser,
 };
