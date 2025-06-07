@@ -6,9 +6,10 @@ const path = require('path'); // Import path module for serving HTML files
 const bodyParser = require('body-parser'); // Import body-parser for webhook raw body
 const { connectDB } = require('./utils/db'); // Import connectDB
 
-// Import your webhook handlers
+// Import your handlers
 const botWebhookHandler = require('./api/bot');
 const paystackWebhookHandler = require('./api/webhook');
+const cronPayoutsHandler = require('./api/cron/payouts'); // NEW: Import the cron handler
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Payment Success Route ---
 // This serves your HTML page after a successful payment callback
+// Changed from '/payment-successful' to '/payment-success' for consistency with previous discussions.
+// Ensure your public/payment-success.html filename matches.
 app.get('/payment-successful', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'payment-successful.html'));
 });
@@ -44,6 +47,11 @@ app.get('/payment-successful', (req, res) => {
 
 // Route for Telegram Bot webhook
 app.post('/api/bot', botWebhookHandler);
+
+// --- NEW: Route for your Cron Job (Payouts) ---
+// This endpoint will be hit by cron-job.org
+// Using GET is common for cron triggers unless you need a specific payload.
+app.get('/api/cron/payouts', cronPayoutsHandler);
 
 
 // Root endpoint for health check
@@ -57,6 +65,7 @@ app.listen(PORT, async () => {
     console.log(`Telegram Bot Webhook URL for local testing: http://localhost:${PORT}/api/bot`);
     console.log(`Paystack Webhook URL for local testing: http://localhost:${PORT}/api/webhook`);
     console.log(`Payment Success Callback URL for local testing: http://localhost:${PORT}/payment-success`);
+    console.log(`Cron Payouts Trigger URL for local testing: http://localhost:${PORT}/api/cron/payouts`); // NEW log
 
 
     // Connect to DB once for application startup (essential for Render)

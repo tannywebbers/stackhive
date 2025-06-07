@@ -64,7 +64,7 @@ ${pending > 0 ? `⏳ Pending Deposits: ₦${pending.toFixed(2)}` : 'Everything l
     INVALID_EMAIL_FORMAT: '❌ That doesn\'t look like a valid email. Please try again (e.g., example@email.com).',
     PROCESSING_DEPOSIT: '✨ Generating your secure payment link... Please wait a moment. ✨',
     PAYSTACK_INIT_ERROR: 'Oops! 😟 An error occurred while setting up your payment. Please try again later or contact support.',
-    PAYMENT_LINK_GENERATED: (amount, authUrl, email, reference) => `✅ Your payment link for ₦${amount.toFixed(2)} is ready!\n\n🔗 [Tap here to complete payment](${authUrl})\n\n📧 Email used: \`${email}\`\n🔢 Reference: \`${reference}\`\n\n_Your balance will be updated automatically after successful payment. ✨_`,
+    PAYMENT_LINK_GENERATED: (amount, authUrl, email, reference) => `✅ Your payment link for ₦${amount.toFixed(2)} is ready!\n\n🔗 [Tap here to complete payment](${authUrl})\n\n📧 Email used: \`${email}\`\n🔢 Reference: \`${reference}\`\n\n_Your balance will be updated automatically after successful payment,kindly check balance after deposit. ✨_`, 
     PAYMENT_CONFIRMED: (amount) => `🎉 Your deposit of ₦${amount.toFixed(2)} has been successfully confirmed! Your balance is updated. Enjoy!`,
     PAYMENT_FAILED: (reference) => `❌ Your payment with reference \`${reference}\` failed or could not be confirmed. Please check your transaction details or contact support.`,
 
@@ -108,6 +108,11 @@ _Are you sure you want to invest this amount?_
     INVESTMENT_SUCCESS: (amount, planName, maturityDate) => `✅ You have successfully invested ₦${amount.toFixed(2)} in the "${planName}" plan!\n\nYour investment will mature on: ${maturityDate.toDateString()}.\n\n_Your earnings will be credited automatically upon maturity. Happy investing! 💰_`,
     // Removed old investment maturity messages, added new automated payout message
     AUTOMATED_PAYOUT_SUCCESS: (planName, investedAmount, returnAmount) => `🎉 Your investment of ₦${investedAmount.toFixed(2)} in the "${planName}" plan has matured!\n\n*Total Return:* ₦${returnAmount.toFixed(2)} has been credited to your balance automatically! 💰`,
+    AUTOMATED_PAYOUT_FAILED: (planName, investedAmount, errorReason) =>
+        `⚠️ *Investment Payout Failed* ⚠️\n\n` +
+        `Your *${planName}* investment of ₦${investedAmount.toFixed(2)} has matured, but the payout failed.\n` +
+        `Reason: _${errorReason || 'Unknown error'}_.\n\n` +
+        `Our team has been notified and will resolve this promptly. Please contact support if you have concerns.`,
 
     // --- ADMIN PANEL MESSAGES ---
     ADMIN_ACCESS_DENIED: '🚫 Access Denied. You are not authorized to use the admin panel.',
@@ -175,31 +180,32 @@ _Are you sure you want to invest this amount?_
 
 // Constants values are now based on your provided "old" code
 const MIN_DEPOSIT_AMOUNT = 1000;
-const MIN_WITHDRAW_AMOUNT = 1000;
-const WELCOME_BONUS_AMOUNT = 1000;
+const MIN_WITHDRAW_AMOUNT = 1500;
+const WELCOME_BONUS_AMOUNT = 200;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const INVESTMENT_PLANS = [
-    { id: 'daily_roi', name: 'Daily ROI', roi: '1.5%', min: 1000, max: 10000, durationDays: 30 },
-    { id: 'weekly_roi', name: 'Weekly ROI', roi: '12%', min: 10000, max: 50000, durationDays: 28 },
-    { id: 'monthly_roi', roi: '50%', min: 50000, max: 200000, durationDays: 60 },
+    { id: 'rookie', name: 'Rookie Plan', roi: '15%', min: 1000, max: 10000, durationDays: 3 },
+    { id: 'standard', name: 'Standard Plan', roi: '18%', min: 10000, max: 50000, durationDays: 28 },
+    { id: 'investor', name: 'Investor Plan', roi: '25%', min: 50000, max: 200000, durationDays: 14 }, // Added 'name' property
 ];
 
+// This calculation logic is provided by you, and handles specific ROI interpretation.
 const calculateProjectedReturn = (amount, plan) => {
     let percentage = parseFloat(plan.roi.replace('%', ''));
     let totalReturnPercentage = 0;
 
-    if (plan.roi.toLowerCase().includes('daily')) {
+    if (plan.id === 'rookie') { // Changed from plan.roi.toLowerCase().includes('rookie') to plan.id for robustness
         totalReturnPercentage = percentage * plan.durationDays;
-    } else if (plan.roi.toLowerCase().includes('weekly')) {
+    } else if (plan.id === 'standard') { // Changed from plan.roi.toLowerCase().includes('standard')
         const numWeeks = plan.durationDays / 7;
         totalReturnPercentage = percentage * numWeeks;
-    } else if (plan.roi.toLowerCase().includes('monthly')) {
+    } else if (plan.id === 'investor') { // Changed from plan.roi.toLowerCase().includes('investor')
         const numMonths = plan.durationDays / 30;
         totalReturnPercentage = percentage * numMonths;
     } else {
-        totalReturnPercentage = percentage;
+        totalReturnPercentage = percentage; // Fallback or direct percentage if no specific logic applies
     }
 
     return amount * (1 + (totalReturnPercentage / 100));
@@ -212,7 +218,7 @@ const POPULAR_NIGERIAN_BANKS = [
     { name: 'Guaranty Trust Bank', code: '058' },
     { name: 'First Bank of Nigeria', code: '011' },
     { name: 'United Bank for Africa (UBA)', code: '033' },
-    { name: 'Ecobank Nigeria', code: '050' },
+    { name: 'Kuda MFB', code: '090267' },
     { name: 'Fidelity Bank', code: '070' },
     { name: 'Union Bank of Nigeria', code: '032' },
     { name: 'Sterling Bank', code: '232' },
@@ -222,11 +228,11 @@ const POPULAR_NIGERIAN_BANKS = [
     { name: 'Polaris Bank', code: '076' },
     { name: 'Stanbic IBTC Bank', code: '221' },
     { name: 'Standard Chartered Bank', code: '068' },
-    { name: 'Titan Trust Bank', code: '911' },
+    { name: 'Opay paycom', code: '810' },
     { name: 'Globus Bank', code: '001031' },
-    { name: 'Parallex Bank', code: '317' },
+    { name: 'Palmpay', code: '100033' },
     { name: 'Providus Bank', code: '101' },
-    { name: 'Unity Bank', code: '215' }
+    { name: 'Moniepoint MFB', code: '50197' }
 ];
 
 
