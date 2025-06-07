@@ -19,7 +19,7 @@ const initializeTransaction = async (email, amount, metadata = {}) => {
                 email: email,
                 amount: amount * 100, // Paystack expects amount in kobo
                 metadata: metadata,
-                callback_url: process.env.PAYSTACK_WEBHOOK_URL // Assuming this is set up correctly for webhooks
+                callback_url: process.env.PAYSTACK_CALLBACK_URL // Assuming this is set up correctly for webhooks
             },
             {
                 headers: {

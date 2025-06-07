@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful!</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #28a745; /* Green for success */
+            margin-bottom: 20px;
+        }
+        img {
+            max-width: 150px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+        p {
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Payment Successful! 🎉</h1>
+        <img src="https://i.gifer.com/7efs.gif" alt="Payment Success GIF">
+        <p>You will be redirected back to the bot in 5 seconds...</p>
+        <p>If not, click <a href="https://t.me/thestachivebot">here</a>.</p>
+    </div>
+
+    <script>
+        // Replace 'YOUR_BOT_USERNAME' with your actual Telegram bot's username (e.g., @MyAwesomeBot)
+        const botUsername = 'thestachivebot'; 
+        const botUrl = `https://t.me/${botUsername}`; 
+
+        setTimeout(() => {
+            window.location.href = botUrl;
+        }, 5000); // 5000 milliseconds = 5 seconds
+
+        // You could also parse query parameters from Paystack to get the reference
+        // and display it or pass it to the bot if needed.
+        const urlParams = new URLSearchParams(window.location.search);
+        const reference = urlParams.get('trxref'); // Paystack uses trxref for reference
+        if (reference) {
+            console.log('Transaction Reference:', reference);
+            // You could embed this in the page or use it to ping your bot
+            // For a bot, pinging might be complex, so relying on webhook is better.
+        }
+    </script>
+</body>
+</html>
