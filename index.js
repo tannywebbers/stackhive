@@ -37,8 +37,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Payment Success Route ---
 // This serves your HTML page after a successful payment callback
-app.get('/payment-success', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'payment-success.html'));
+app.get('/payment-successful', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'payment-successful.html'));
 });
 
 
