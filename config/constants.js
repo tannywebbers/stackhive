@@ -6,7 +6,7 @@ const MAIN_MENU_KEYBOARD = {
             [{ text: '💰 Balance' }, { text: '💳 Deposit' }],
             [{ text: '📤 Withdraw' }, { text: '🗂 Wallet' }],
             [{ text: '📊 Invest' }, { text: '👫 Referrals' }],
-            [{ text: '🆘 Support' }]
+            [{ text: '📜 Transactions' }, { text: '🆘 Support' }] // Added '📜 Transactions' button
         ],
         resize_keyboard: true,
         one_time_keyboard: false
@@ -41,6 +41,33 @@ ${pending > 0 ? `⏳ Pending Deposits: ₦${pending.toFixed(2)}` : 'Everything l
 `;
         return message;
     },
+    
+    TRANSACTION_HISTORY: (transactions) => {
+        if (!transactions || transactions.length === 0) {
+            return "🗄️ You don't have any transactions yet.";
+        }
+
+        let message = "📊 *Your Latest Transactions:*\n\n";
+        transactions.forEach((tx, index) => {
+            const date = new Date(tx.date).toLocaleString('en-NG', {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true
+            });
+            const type = tx.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); // Format type (e.g., "deposit" -> "Deposit", "referral_bonus" -> "Referral Bonus")
+            const status = tx.status.charAt(0).toUpperCase() + tx.status.slice(1); // Capitalize status
+
+            message += `*${index + 1}. ${type}*\n`;
+            message += `  *Amount:* ₦${tx.amount.toFixed(2)}\n`;
+            message += `  *Status:* ${status}\n`;
+            message += `  *Date:* ${date}\n`;
+            // message += `  _Ref: ${tx.reference.substring(0, 8)}...\n`; // Optional: shortened reference
+            message += `\n`;
+        });
+
+        message += "_Showing your last 10 transactions._";
+        return message;
+    },
+    
     CURRENT_INVESTMENTS: (investments) => {
         if (!investments || investments.length === 0) {
             return "\n\n_You currently have no active investments. Start investing today!_ 🚀";
@@ -187,29 +214,23 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const INVESTMENT_PLANS = [
     { id: 'rookie', name: 'Rookie Plan', roi: '15%', min: 1000, max: 10000, durationDays: 3 },
-    { id: 'standard', name: 'Standard Plan', roi: '18%', min: 10000, max: 50000, durationDays: 28 },
-    { id: 'investor', name: 'Investor Plan', roi: '25%', min: 50000, max: 200000, durationDays: 14 }, // Added 'name' property
+    { id: 'standard', name: 'Standard Plan', roi: '18%', min: 10000, max: 50000, durationDays: 7 },
+    { id: 'investor', name: 'Investor Plan', roi: '25%', min: 50000, max: 200000, durationDays: 14 },
 ];
 
-// This calculation logic is provided by you, and handles specific ROI interpretation.
+// Calculation: ROI is TOTAL for the plan duration
 const calculateProjectedReturn = (amount, plan) => {
-    let percentage = parseFloat(plan.roi.replace('%', ''));
-    let totalReturnPercentage = 0;
+    let roiPercentage = parseFloat(plan.roi.replace('%', '')); // Parses '15%' to 15
 
-    if (plan.id === 'rookie') { // Changed from plan.roi.toLowerCase().includes('rookie') to plan.id for robustness
-        totalReturnPercentage = percentage * plan.durationDays;
-    } else if (plan.id === 'standard') { // Changed from plan.roi.toLowerCase().includes('standard')
-        const numWeeks = plan.durationDays / 7;
-        totalReturnPercentage = percentage * numWeeks;
-    } else if (plan.id === 'investor') { // Changed from plan.roi.toLowerCase().includes('investor')
-        const numMonths = plan.durationDays / 30;
-        totalReturnPercentage = percentage * numMonths;
-    } else {
-        totalReturnPercentage = percentage; // Fallback or direct percentage if no specific logic applies
+    if (isNaN(roiPercentage)) {
+        console.error(`Invalid ROI percentage for plan ${plan.id}: ${plan.roi}`);
+        return amount; // Fallback for invalid ROI
     }
 
-    return amount * (1 + (totalReturnPercentage / 100));
+    // This is the correct logic for "total return for the entire duration"
+    return amount * (1 + (roiPercentage / 100));
 };
+
 
 
 const POPULAR_NIGERIAN_BANKS = [

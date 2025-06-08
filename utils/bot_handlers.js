@@ -1,11 +1,11 @@
 // utils/bot_handlers.js
-const { getOrCreateUser, updateUserBalance, addTransaction, saveBankDetails, updateTransactionStatus, User, deleteUser } = require('./db');
+const { getOrCreateUser, updateUserBalance, addTransaction, saveBankDetails, updateTransactionStatus, User, deleteUser, getLatestTransactions } = require('./db'); // ADDED getLatestTransactions
 const { initializeTransaction, initiateTransfer, createTransferRecipient, getBankCodes, resolveAccount } = require('./paystack');
 const { generateUniqueRef } = require('./helpers');
 const { MAIN_MENU_KEYBOARD, ADMIN_MENU_KEYBOARD, BOT_MESSAGES, MIN_DEPOSIT_AMOUNT, MIN_WITHDRAW_AMOUNT, EMAIL_REGEX, INVESTMENT_PLANS, POPULAR_NIGERIAN_BANKS, WELCOME_BONUS_AMOUNT, calculateProjectedReturn } = require('../config/constants');
 
 // State to manage user interactions
-const userStates = {}; // We no longer need botMessageIds since we're not deleting
+const userStates = {};
 
 // Get admin IDs from environment variable
 const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',').map(id => parseInt(id.trim())) : [];
@@ -31,8 +31,6 @@ const formatBanksForKeyboard = (banks) => {
     return { inline_keyboard: rows };
 };
 
-// Removed deletePreviousBotMessage function as it's no longer needed
-
 // Function to register all bot handlers
 const registerBotHandlers = (bot) => {
 
@@ -41,8 +39,6 @@ const registerBotHandlers = (bot) => {
         const telegramId = msg.from.id;
         const firstName = msg.from.first_name;
         const username = msg.from.username;
-
-        // No more deletion for /start command
 
         let referrerId = null;
         const startPayload = msg.text.split(' ')[1];
@@ -249,6 +245,25 @@ const registerBotHandlers = (bot) => {
                 }
             }
         );
+    });
+
+    // NEW: Transaction History Handler
+    bot.onText(/📜 Transactions/, async (msg) => {
+        const chatId = msg.chat.id;
+        const telegramId = msg.from.id;
+
+        // Ensure that if a user is in an admin state, they switch back to main menu
+        if (userStates[chatId] && userStates[chatId].step.startsWith('admin_')) {
+            delete userStates[chatId]; // Exit admin state
+        }
+
+        try {
+            const transactions = await getLatestTransactions(telegramId, 10); // Fetch last 10 transactions
+            await bot.sendMessage(chatId, BOT_MESSAGES.TRANSACTION_HISTORY(transactions), { parse_mode: 'Markdown', ...MAIN_MENU_KEYBOARD });
+        } catch (error) {
+            console.error(`Error fetching transactions for user ${telegramId}:`, error);
+            await bot.sendMessage(chatId, BOT_MESSAGES.GENERIC_ERROR, { ...MAIN_MENU_KEYBOARD });
+        }
     });
 
     // ADMIN MENU BUTTONS HANDLERS
@@ -464,7 +479,6 @@ const registerBotHandlers = (bot) => {
         const text = msg.text;
 
         // Ignore commands or main menu/admin menu buttons
-        // Added the Broadcast Message button text to the ignore list
         if (text.startsWith('/') ||
             MAIN_MENU_KEYBOARD.reply_markup.keyboard.flat().map(btn => btn.text).includes(text) ||
             (ADMIN_IDS.includes(telegramId) && ADMIN_MENU_KEYBOARD.reply_markup.keyboard.flat().map(btn => btn.text).includes(text)) ||

@@ -191,6 +191,26 @@ const deleteUser = async (telegramId) => {
     }
 };
 
+// NEW FUNCTION: Get latest transactions for a user
+const getLatestTransactions = async (telegramId, limit = 10) => {
+    try {
+        const user = await User.findOne(
+            { telegramId },
+            { 'transactions': { $slice: -limit } } // Use $slice to get the last 'limit' items
+        );
+        if (!user) {
+            return [];
+        }
+        // Transactions are stored in chronological order, but $slice: -limit gets the last 'limit' in that order.
+        // If you want them in reverse chronological (newest first for display), you'd reverse them here.
+        return user.transactions.reverse(); // Reverse to show newest first
+    } catch (error) {
+        console.error('\x1b[31m%s\x1b[0m', '❌ Error in getLatestTransactions:', error);
+        throw error;
+    }
+};
+
+
 const getMaturedInvestments = async (currentDate) => {
     try {
         const users = await User.find({
@@ -240,7 +260,9 @@ module.exports = {
     updateTransactionStatus,
     saveWalletAddress,
     deleteUser,
-
+    
+    getLatestTransactions,
+    
     getMaturedInvestments,
     updateInvestmentStatus,
 };
